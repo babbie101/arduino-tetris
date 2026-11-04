@@ -32,7 +32,7 @@ int (*ALL_PIECES[2])[2] = { O_PIECE, I_PIECE };
 uint16_t PIECE_COLORS[2] = { ST77XX_YELLOW, ST77XX_CYAN };
 
 // Active piece state
-int currentPiece[4][2]; // Modifiable offset copy for active piece
+int currentPiece[4][2];
 uint16_t currentPieceColor = ST77XX_YELLOW;
 int pieceCol = 4;
 int pieceRow = -1;
@@ -44,7 +44,7 @@ int board[ROWS][COLS] = {0};
 
 void drawCell(int col, int row, uint16_t color)
 {
-  if (row < 0) return; // Don't draw off-screen cells above board
+  if (row < 0) return;
   int pixelX = BOARD_X + col * CELL;
   int pixelY = BOARD_Y + row * CELL;
   tft.fillRect(pixelX, pixelY, CELL, CELL, color);
@@ -53,6 +53,23 @@ void drawCell(int col, int row, uint16_t color)
 void drawBoardBorder()
 {
   tft.drawRect(BOARD_X, BOARD_Y, COLS * CELL, ROWS * CELL, ST77XX_BLUE);
+}
+
+void redrawFullBoard()
+{
+  tft.fillScreen(ST77XX_BLACK);
+  drawBoardBorder();
+
+  for (int r = 0; r < ROWS; r++)
+  {
+    for (int c = 0; c < COLS; c++)
+    {
+      if (board[r][c] == 1)
+      {
+        drawCell(c, r, ST77XX_WHITE);
+      }
+    }
+  }
 }
 
 void drawPiece(int col, int row, int shape[4][2], uint16_t color)
@@ -92,7 +109,6 @@ bool canMoveTo(int newCol, int newRow, int shape[4][2])
   return true;
 }
 
-// Rotation helper: Rotates shape 90 degrees clockwise into dest
 void rotatePieceClockwise(int src[4][2], int dest[4][2])
 {
   for (int i = 0; i < 4; i++)
@@ -104,12 +120,49 @@ void rotatePieceClockwise(int src[4][2], int dest[4][2])
   }
 }
 
+void checkAndClearLines()
+{
+  for (int r = ROWS - 1; r >= 0; r--)
+  {
+    bool fullRow = true;
+
+    for (int c = 0; c < COLS; c++)
+    {
+      if (board[r][c] == 0)
+      {
+        fullRow = false;
+        break;
+      }
+    }
+
+    if (fullRow)
+    {
+      // Shift rows above down by 1
+      for (int y = r; y > 0; y--)
+      {
+        for (int c = 0; c < COLS; c++)
+        {
+          board[y][c] = board[y - 1][c];
+        }
+      }
+
+      // Empty top row
+      for (int c = 0; c < COLS; c++)
+      {
+        board[0][c] = 0;
+      }
+
+      r++; // Re-check this row index
+      redrawFullBoard();
+    }
+  }
+}
+
 void spawnNewPiece()
 {
   int randomIndex = random(0, 2);
   currentPieceColor = PIECE_COLORS[randomIndex];
   
-  // Copy chosen shape into active currentPiece array
   for (int i = 0; i < 4; i++) {
     currentPiece[i][0] = ALL_PIECES[randomIndex][i][0];
     currentPiece[i][1] = ALL_PIECES[randomIndex][i][1];
@@ -202,9 +255,9 @@ void loop()
     else
     {
       lockPiece(pieceCol, pieceRow, currentPiece);
+      checkAndClearLines(); // Scan & clear full rows
       spawnNewPiece();
 
-      // Game Over Check
       if (!canMoveTo(pieceCol, pieceRow, currentPiece))
       {
         for (int r = 0; r < ROWS; r++)
