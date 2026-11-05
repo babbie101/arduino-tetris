@@ -24,12 +24,27 @@ const int BOARD_Y = 8;
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 
-// ===== SHAPE OFFSET DEFINITIONS =====
+// ===== ALL 7 SHAPE OFFSET DEFINITIONS =====
 int O_PIECE[4][2] = { {0,0}, {1,0}, {0,1}, {1,1} };
 int I_PIECE[4][2] = { {0,0}, {0,1}, {0,2}, {0,3} };
+int L_PIECE[4][2] = { {0,0}, {0,1}, {0,2}, {1,2} };
+int J_PIECE[4][2] = { {1,0}, {1,1}, {1,2}, {0,2} };
+int S_PIECE[4][2] = { {1,0}, {2,0}, {0,1}, {1,1} };
+int Z_PIECE[4][2] = { {0,0}, {1,0}, {1,1}, {2,1} };
+int T_PIECE[4][2] = { {1,0}, {0,1}, {1,1}, {2,1} };
 
-int (*ALL_PIECES[2])[2] = { O_PIECE, I_PIECE };
-uint16_t PIECE_COLORS[2] = { ST77XX_YELLOW, ST77XX_CYAN };
+// 7-Piece shape and color arrays
+int (*ALL_PIECES[7])[2] = { O_PIECE, I_PIECE, L_PIECE, J_PIECE, S_PIECE, Z_PIECE, T_PIECE };
+
+uint16_t PIECE_COLORS[7] = {
+  ST77XX_YELLOW,  // O
+  ST77XX_CYAN,    // I
+  ST77XX_ORANGE,  // L
+  ST77XX_BLUE,    // J
+  ST77XX_GREEN,   // S
+  ST77XX_RED,     // Z
+  ST77XX_MAGENTA  // T
+};
 
 // Active piece & game state
 int currentPiece[4][2];
@@ -40,7 +55,8 @@ int score = 0;
 
 // Timing & Board State
 unsigned long lastDropTime = 0;
-int dropInterval = 500;
+int baseDropInterval = 500;
+int currentDropInterval = 500;
 int board[ROWS][COLS] = {0};
 
 void drawCell(int col, int row, uint16_t color)
@@ -58,13 +74,15 @@ void drawBoardBorder()
 
 void drawUI()
 {
+  tft.drawFastVLine(BOARD_X + COLS * CELL + 2, 0, 128, ST77XX_BLUE);
+
   tft.setTextSize(1);
   tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
   
-  tft.setCursor(95, 10);
-  tft.print("SCORE:");
+  tft.setCursor(96, 10);
+  tft.print("SCORE");
   
-  tft.setCursor(95, 25);
+  tft.setCursor(96, 24);
   tft.print(score);
   tft.print("   ");
 }
@@ -135,6 +153,13 @@ void rotatePieceClockwise(int src[4][2], int dest[4][2])
   }
 }
 
+void updateSpeed()
+{
+  // Increase speed by dropping interval as score rises (minimum speed floor of 100ms)
+  int speedBoost = (score / 300) * 40;
+  currentDropInterval = max(100, baseDropInterval - speedBoost);
+}
+
 void checkAndClearLines()
 {
   int linesCleared = 0;
@@ -180,13 +205,14 @@ void checkAndClearLines()
 
   if (linesCleared > 0)
   {
+    updateSpeed();
     redrawFullBoard();
   }
 }
 
 void spawnNewPiece()
 {
-  int randomIndex = random(0, 2);
+  int randomIndex = random(0, 7); // Random pick across all 7 pieces
   currentPieceColor = PIECE_COLORS[randomIndex];
   
   for (int i = 0; i < 4; i++) {
@@ -204,6 +230,7 @@ void setup()
   randomSeed(analogRead(A0));
 
   pinMode(JOY_F, INPUT_PULLUP);
+  pinMode(JOY_B, INPUT_PULLUP);
   pinMode(JOY_L, INPUT_PULLUP);
   pinMode(JOY_R, INPUT_PULLUP);
 
@@ -219,7 +246,7 @@ void setup()
 
 void loop()
 {
-  // 1. Rotate
+  // 1. Rotate (JOY_F)
   if (digitalRead(JOY_F) == LOW)
   {
     int tempPiece[4][2];
@@ -240,7 +267,20 @@ void loop()
     }
   }
 
-  // 2. Left
+  // 2. Fast Fall / Soft Drop (JOY_B)
+  if (digitalRead(JOY_B) == LOW)
+  {
+    if (canMoveTo(pieceCol, pieceRow + 1, currentPiece))
+    {
+      drawPiece(pieceCol, pieceRow, currentPiece, ST77XX_BLACK);
+      pieceRow = pieceRow + 1;
+      drawPiece(pieceCol, pieceRow, currentPiece, currentPieceColor);
+      drawBoardBorder();
+      delay(50); // Fast drop step delay
+    }
+  }
+
+  // 3. Move Left (JOY_L)
   if (digitalRead(JOY_L) == LOW)
   {
     if (canMoveTo(pieceCol - 1, pieceRow, currentPiece))
@@ -253,7 +293,7 @@ void loop()
     }
   }
 
-  // 3. Right
+  // 4. Move Right (JOY_R)
   if (digitalRead(JOY_R) == LOW)
   {
     if (canMoveTo(pieceCol + 1, pieceRow, currentPiece))
@@ -266,9 +306,9 @@ void loop()
     }
   }
 
-  // 4. Gravity Tick
+  // 5. Gravity Tick
   unsigned long currentTime = millis();
-  if (currentTime - lastDropTime >= dropInterval)
+  if (currentTime - lastDropTime >= currentDropInterval)
   {
     lastDropTime = currentTime;
 
@@ -288,6 +328,7 @@ void loop()
       if (!canMoveTo(pieceCol, pieceRow, currentPiece))
       {
         score = 0;
+        updateSpeed();
         for (int r = 0; r < ROWS; r++)
           for (int c = 0; c < COLS; c++)
             board[r][c] = 0;
