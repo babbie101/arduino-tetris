@@ -31,11 +31,12 @@ int I_PIECE[4][2] = { {0,0}, {0,1}, {0,2}, {0,3} };
 int (*ALL_PIECES[2])[2] = { O_PIECE, I_PIECE };
 uint16_t PIECE_COLORS[2] = { ST77XX_YELLOW, ST77XX_CYAN };
 
-// Active piece state
+// Active piece & game state
 int currentPiece[4][2];
 uint16_t currentPieceColor = ST77XX_YELLOW;
 int pieceCol = 4;
 int pieceRow = -1;
+int score = 0;
 
 // Timing & Board State
 unsigned long lastDropTime = 0;
@@ -55,10 +56,24 @@ void drawBoardBorder()
   tft.drawRect(BOARD_X, BOARD_Y, COLS * CELL, ROWS * CELL, ST77XX_BLUE);
 }
 
+void drawUI()
+{
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  
+  tft.setCursor(95, 10);
+  tft.print("SCORE:");
+  
+  tft.setCursor(95, 25);
+  tft.print(score);
+  tft.print("   ");
+}
+
 void redrawFullBoard()
 {
   tft.fillScreen(ST77XX_BLACK);
   drawBoardBorder();
+  drawUI();
 
   for (int r = 0; r < ROWS; r++)
   {
@@ -100,9 +115,9 @@ bool canMoveTo(int newCol, int newRow, int shape[4][2])
     int targetCol = newCol + shape[i][0];
     int targetRow = newRow + shape[i][1];
 
-    if (targetRow >= ROWS) return false;   // Floor
-    if (targetCol < 0) return false;      // Left wall
-    if (targetCol >= COLS) return false;  // Right wall
+    if (targetRow >= ROWS) return false;
+    if (targetCol < 0) return false;
+    if (targetCol >= COLS) return false;
 
     if (targetRow >= 0 && board[targetRow][targetCol] == 1) return false;
   }
@@ -122,6 +137,8 @@ void rotatePieceClockwise(int src[4][2], int dest[4][2])
 
 void checkAndClearLines()
 {
+  int linesCleared = 0;
+
   for (int r = ROWS - 1; r >= 0; r--)
   {
     bool fullRow = true;
@@ -137,7 +154,8 @@ void checkAndClearLines()
 
     if (fullRow)
     {
-      // Shift rows above down by 1
+      linesCleared++;
+
       for (int y = r; y > 0; y--)
       {
         for (int c = 0; c < COLS; c++)
@@ -146,15 +164,23 @@ void checkAndClearLines()
         }
       }
 
-      // Empty top row
       for (int c = 0; c < COLS; c++)
       {
         board[0][c] = 0;
       }
 
-      r++; // Re-check this row index
-      redrawFullBoard();
+      r++;
     }
+  }
+
+  if (linesCleared == 1)      score += 100;
+  else if (linesCleared == 2) score += 300;
+  else if (linesCleared == 3) score += 500;
+  else if (linesCleared >= 4) score += 800;
+
+  if (linesCleared > 0)
+  {
+    redrawFullBoard();
   }
 }
 
@@ -186,13 +212,14 @@ void setup()
   tft.fillScreen(ST77XX_BLACK);
 
   drawBoardBorder();
+  drawUI();
   spawnNewPiece();
   drawPiece(pieceCol, pieceRow, currentPiece, currentPieceColor);
 }
 
 void loop()
 {
-  // 1. Read Forward Joystick (Rotate)
+  // 1. Rotate
   if (digitalRead(JOY_F) == LOW)
   {
     int tempPiece[4][2];
@@ -213,7 +240,7 @@ void loop()
     }
   }
 
-  // 2. Read Left Input
+  // 2. Left
   if (digitalRead(JOY_L) == LOW)
   {
     if (canMoveTo(pieceCol - 1, pieceRow, currentPiece))
@@ -226,7 +253,7 @@ void loop()
     }
   }
 
-  // 3. Read Right Input
+  // 3. Right
   if (digitalRead(JOY_R) == LOW)
   {
     if (canMoveTo(pieceCol + 1, pieceRow, currentPiece))
@@ -255,17 +282,17 @@ void loop()
     else
     {
       lockPiece(pieceCol, pieceRow, currentPiece);
-      checkAndClearLines(); // Scan & clear full rows
+      checkAndClearLines();
       spawnNewPiece();
 
       if (!canMoveTo(pieceCol, pieceRow, currentPiece))
       {
+        score = 0;
         for (int r = 0; r < ROWS; r++)
           for (int c = 0; c < COLS; c++)
             board[r][c] = 0;
 
-        tft.fillScreen(ST77XX_BLACK);
-        drawBoardBorder();
+        redrawFullBoard();
       }
 
       drawPiece(pieceCol, pieceRow, currentPiece, currentPieceColor);
